@@ -1,61 +1,87 @@
-#include "rclcpp/rclcpp.hpp"
-#include "sensor_msgs/msg/laser_scan.hpp"
-#include "geometry_msgs/msg/twist.hpp"
+#include <rclcpp/rclcpp.hpp>
+#include <sensor_msgs/msg/laser_scan.hpp>
+#include <geometry_msgs/msg/twist.hpp>
+#include <algorithm>
+#include <vector>
+#include <chrono>
 
-using std::placeholders::_1;
+using namespace std::chrono_literals;
 
-class PatrolTestIO : public rclcpp::Node
+class Patrol : public rclcpp::Node
 {
 public:
-    PatrolTestIO() : Node("patrol_test_io")
+    Patrol() : Node("patrol_node")
     {
-        RCLCPP_INFO(this->get_logger(), "🔹 Iniciando nodo de prueba I/O...");
+        // Subscriber al láser
+        laser_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
+            "/scan", 10, std::bind(&Patrol::laser_callback, this, std::placeholders::_1));
 
-        // Publisher: enviamos comandos de velocidad
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+        // Publisher a cmd_vel
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
-        // Subscriber: recibimos datos del LIDAR
-        sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", 10, std::bind(&PatrolTestIO::laser_callback, this, _1));
+        // Timer para control loop 10 Hz
+        control_timer_ = this->create_wall_timer(
+            100ms, std::bind(&Patrol::control_loop, this));
 
-        // Timer: publicamos una velocidad cada 0.5 s
-        timer_ = this->create_wall_timer(
-            std::chrono::milliseconds(500),
-            std::bind(&PatrolTestIO::publish_test_cmd, this));
+        RCLCPP_INFO(this->get_logger(), "Patrol Node Ready");
     }
 
 private:
+    // Variables
+    std::vector<float> laser_ranges_;
+    float obstacle_threshold_ = 0.35; // 35 cm
+
+    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr cmd_vel_pub_;
+    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr laser_sub_;
+    rclcpp::TimerBase::SharedPtr control_timer_;
+
+    // Callback del láser
     void laser_callback(const sensor_msgs::msg::LaserScan::SharedPtr msg)
     {
-        size_t num_rays = msg->ranges.size();
-        int center_idx = num_rays / 2;
-        float center_range = msg->ranges[center_idx];
+        laser_ranges_ = msg->ranges;
 
-        RCLCPP_INFO(this->get_logger(),
-            "LIDAR recibido -> rays: %zu, rango_frontal: %.2f m, ángulo_min: %.2f, ángulo_max: %.2f",
-            num_rays, center_range, msg->angle_min, msg->angle_max);
+        // Opcional: imprimir la distancia mínima frontal para debug
+        if (!laser_ranges_.empty())
+        {
+            size_t start_idx = laser_ranges_.size() / 4;
+            size_t end_idx = 3 * laser_ranges_.size() / 4;
+            float min_front = *std::min_element(laser_ranges_.begin() + start_idx,
+                                                laser_ranges_.begin() + end_idx);
+            RCLCPP_INFO(this->get_logger(), "Min front distance: %.2f m", min_front);
+        }
     }
 
-    void publish_test_cmd()
+    // Loop de control
+    void control_loop()
     {
-        geometry_msgs::msg::Twist cmd;
-        cmd.linear.x = 0.1;   // Avanza lentamente
-        cmd.angular.z = 0.0;  // Sin giro
+        auto cmd_msg = geometry_msgs::msg::Twist();
+        cmd_msg.linear.x = 0.1; // Velocidad hacia adelante
 
-        pub_->publish(cmd);
-        RCLCPP_INFO(this->get_logger(), "📤 Publicando velocidad: linear=%.2f, angular=%.2f",
-                    cmd.linear.x, cmd.angular.z);
+        // Verificar obstáculos frontales
+        if (!laser_ranges_.empty())
+        {
+            size_t start_idx = laser_ranges_.size() / 4;
+            size_t end_idx = 3 * laser_ranges_.size() / 4;
+            float min_front = *std::min_element(laser_ranges_.begin() + start_idx,
+                                                laser_ranges_.begin() + end_idx);
+
+            if (min_front < obstacle_threshold_)
+            {
+                cmd_msg.linear.x = 0.0; // Detener el robot
+                RCLCPP_WARN(this->get_logger(), "Obstacle detected! Stopping.");
+            }
+        }
+
+        // Publicar comando
+        cmd_vel_pub_->publish(cmd_msg);
     }
-
-    rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
-    rclcpp::Subscription<sensor_msgs::msg::LaserScan>::SharedPtr sub_;
-    rclcpp::TimerBase::SharedPtr timer_;
 };
 
-int main(int argc, char *argv[])
+// Main
+int main(int argc, char* argv[])
 {
     rclcpp::init(argc, argv);
-    auto node = std::make_shared<PatrolTestIO>();
+    auto node = std::make_shared<Patrol>();
     rclcpp::spin(node);
     rclcpp::shutdown();
     return 0;
