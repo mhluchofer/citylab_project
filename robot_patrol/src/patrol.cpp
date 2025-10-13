@@ -82,32 +82,53 @@ private:
     void control_loop()
     {
         geometry_msgs::msg::Twist cmd;
+        cmd.linear.x = 0.1;  // avance por defecto
 
-        cmd.linear.x = 0.1;  // Movimiento base hacia adelante
+        rclcpp::Time now = this->now();
 
         if (obstacle_detected_)
         {
-            // Ajuste de ganancia: un poco más agresivo que /2.0
-            cmd.angular.z = direction_ * 0.8;
+            if (!turning_)
+            {
+                // Inicializar giro temporal
+                turning_ = true;
+                turn_start_ = now;
+                double desired_angle = M_PI/2;        // giro de 90 grados
+                double omega = std::abs(direction_ / 2.0); // velocidad angular basada en la calificación
+                turn_duration_ = desired_angle / omega;
 
-            // Limitar el giro máximo a +-90 grados
-            if (cmd.angular.z > M_PI / 2) cmd.angular.z = M_PI / 2;
-            if (cmd.angular.z < -M_PI / 2) cmd.angular.z = -M_PI / 2;
-
-            // Si el ángulo es muy pequeño, forzar un giro mínimo de 45 grados
-            if (std::abs(direction_) < M_PI / 8)
-                cmd.angular.z = (direction_ >= 0) ? M_PI / 4 : -M_PI / 4;
-
-            // Si está muy cerca, reducir velocidad lineal
-            cmd.linear.x = 0.05;
+                cmd.linear.x = 0.0; // detener avance mientras gira
+                cmd.angular.z = (direction_ >= 0) ? omega : -omega;
+            }
+            else
+            {
+                double elapsed = (now - turn_start_).seconds();
+                if (elapsed >= turn_duration_)
+                {
+                    // Giro terminado, reanudar avance
+                    turning_ = false;
+                    cmd.linear.x = 0.1;
+                    cmd.angular.z = 0.0;
+                }
+                else
+                {
+                    // Mantener giro
+                    cmd.linear.x = 0.0;
+                    double omega = std::abs(direction_ / 2.0);
+                    cmd.angular.z = (direction_ >= 0) ? omega : -omega;
+                }
+            }
         }
         else
         {
-            cmd.angular.z = 0.0; // Seguir recto
+            // Movimiento normal
+            turning_ = false;
+            cmd.angular.z = 0.0;
         }
 
         pub_->publish(cmd);
     }
+
     // --------------------------- VARIABLES ---------------------------
     rclcpp::CallbackGroup::SharedPtr callback_group_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
@@ -117,6 +138,10 @@ private:
     std::mutex mutex_;
     float direction_;
     bool obstacle_detected_;
+    bool turning_ = false;
+    rclcpp::Time turn_start_;
+    double turn_duration_;  // segundos que dura el giro
+    double target_angle_;   // ángulo total a girar (rad) 
 };
 
 int main(int argc, char *argv[])
