@@ -44,24 +44,26 @@ private:
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        int start_idx = (int)((-M_PI_2 - msg->angle_min) / msg->angle_increment);
-        int end_idx   = (int)(( M_PI_2 - msg->angle_min) / msg->angle_increment);
-        
+        ranges_ = msg->ranges;
+        angle_min_ = msg->angle_min;
+        angle_increment_ = msg->angle_increment;
+
+        int start_idx = (int)((-M_PI_2 - angle_min_) / angle_increment_);
+        int end_idx   = (int)(( M_PI_2 - angle_min_) / angle_increment_);
         start_idx = std::max(0, start_idx);
-        end_idx   = std::min((int)msg->ranges.size() - 1, end_idx);
+        end_idx   = std::min((int)ranges_.size() - 1, end_idx);
 
         int center_idx = (start_idx + end_idx) / 2;
-        obstacle_detected_ = msg->ranges[center_idx] < 0.35;
+        obstacle_detected_ = ranges_[center_idx] < 0.35;
 
         if (obstacle_detected_)
         {
-            RCLCPP_WARN_STREAM(this->get_logger(), "Obstacle detected!");
             float max_range = 0.0;
             int safest_idx = center_idx;
 
             for (int i = start_idx; i <= end_idx; i++)
             {
-                float r = msg->ranges[i];
+                float r = ranges_[i];
                 if (std::isfinite(r) && r > max_range && r < msg->range_max)
                 {
                     max_range = r;
@@ -69,7 +71,7 @@ private:
                 }
             }
 
-            direction_ = msg->angle_min + safest_idx * msg->angle_increment;
+            direction_ = angle_min_ + safest_idx * angle_increment_;
         }
         else
         {
@@ -82,47 +84,91 @@ private:
     void control_loop()
     {
         geometry_msgs::msg::Twist cmd;
-        cmd.linear.x = 0.1;  // avance por defecto
+        cmd.linear.x = 0.1;  // Velocidad base hacia adelante
 
-        rclcpp::Time now = this->now();
+        std::lock_guard<std::mutex> lock(mutex_);
 
-        if (obstacle_detected_)
+        // Variables auxiliares para laterales
+        bool left_clear = true;
+        bool right_clear = true;
+
+        if (obstacle_detected_ || direction_ != 0.0)
         {
-            if (!turning_)
-            {
-                // Inicializar giro temporal
-                turning_ = true;
-                turn_start_ = now;
-                double desired_angle = M_PI/2;        // giro de 90 grados
-                double omega = std::abs(direction_ / 2.0); // velocidad angular basada en la calificación
-                turn_duration_ = desired_angle / omega;
+            double giro_signo = (direction_ >= 0) ? 1.0 : -1.0;
 
-                cmd.linear.x = 0.0; // detener avance mientras gira
-                cmd.angular.z = (direction_ >= 0) ? omega : -omega;
-            }
-            else
+            // Determinar indices de los rayos extremos según lateral
+            int start_idx, end_idx;
+            if (giro_signo > 0)
             {
-                double elapsed = (now - turn_start_).seconds();
-                if (elapsed >= turn_duration_)
+                // Giro a la derecha → revisar lateral izquierdo (0 a +90°)
+                start_idx = (int)((0.0 - angle_min_) / angle_increment_);
+                end_idx   = (int)((M_PI_2 - angle_min_) / angle_increment_);
+
+                start_idx = std::max(0, start_idx);
+                end_idx   = std::min((int)ranges_.size() - 1, end_idx);
+
+                left_clear = true;
+                for (int i = start_idx; i <= end_idx; ++i)
                 {
-                    // Giro terminado, reanudar avance
-                    turning_ = false;
-                    cmd.linear.x = 0.1;
-                    cmd.angular.z = 0.0;
+                    double r = ranges_[i];
+                    if (!std::isfinite(r) || r < 0.35)
+                    {
+                        left_clear = false;
+                        break;
+                    }
+                }
+
+                if (!left_clear)
+                {
+                    cmd.linear.x = 0.0;
+                    cmd.angular.z = direction_ / 2.0;
+                    RCLCPP_WARN(this->get_logger(), "Obstacle detected on left! Rotating...");
                 }
                 else
                 {
-                    // Mantener giro
+                    cmd.linear.x = 0.1;
+                    cmd.angular.z = 0.0;
+                    RCLCPP_INFO(this->get_logger(), "Left lateral free. Moving forward.");
+                }
+            }
+            else
+            {
+                // Giro a la izquierda → revisar lateral derecho (-90° a 0)
+                start_idx = (int)((-M_PI_2 - angle_min_) / angle_increment_);
+                end_idx   = (int)((0.0 - angle_min_) / angle_increment_);
+
+                start_idx = std::max(0, start_idx);
+                end_idx   = std::min((int)ranges_.size() - 1, end_idx);
+
+                right_clear = true;
+                for (int i = start_idx; i <= end_idx; ++i)
+                {
+                    double r = ranges_[i];
+                    if (!std::isfinite(r) || r < 0.35)
+                    {
+                        right_clear = false;
+                        break;
+                    }
+                }
+
+                if (!right_clear)
+                {
                     cmd.linear.x = 0.0;
-                    double omega = std::abs(direction_ / 2.0);
-                    cmd.angular.z = (direction_ >= 0) ? omega : -omega;
+                    cmd.angular.z = direction_ / 2.0;
+                    RCLCPP_WARN(this->get_logger(), "Obstacle detected on right! Rotating...");
+                }
+                else
+                {
+                    cmd.linear.x = 0.1;
+                    cmd.angular.z = 0.0;
+                    RCLCPP_INFO(this->get_logger(), "Right lateral free. Moving forward.");
                 }
             }
         }
         else
         {
-            // Movimiento normal
-            turning_ = false;
+            // Sin obstáculo frontal → avanzar normalmente
+            cmd.linear.x = 0.1;
             cmd.angular.z = 0.0;
         }
 
@@ -139,9 +185,9 @@ private:
     float direction_;
     bool obstacle_detected_;
     bool turning_ = false;
-    rclcpp::Time turn_start_;
-    double turn_duration_;  // segundos que dura el giro
-    double target_angle_;   // ángulo total a girar (rad) 
+    std::vector<float> ranges_;
+    float angle_min_;
+    float angle_increment_;
 };
 
 int main(int argc, char *argv[])
