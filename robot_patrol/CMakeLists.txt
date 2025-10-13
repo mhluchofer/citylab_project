@@ -11,7 +11,7 @@ find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-#find_package(nav_msgs REQUIRED)
+find_package(nav_msgs REQUIRED)
 #find_package(tf2_ros REQUIRED)
 #find_package(robot_state_publisher REQUIRED)
 #find_package(robot_model REQUIRED)
@@ -23,7 +23,7 @@ ament_target_dependencies(patrol_node
   std_msgs
   geometry_msgs
   sensor_msgs
-  #nav_msgs
+  nav_msgs
   #tf2_ros
   #robot_state_publisher
   #robot_model
@@ -42,5 +42,9 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
+
+install(DIRECTORY launch
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 ament_package()
