@@ -1,3 +1,8 @@
+// NOTE: During shutdown (Ctrl+C), some ROS 2 warnings may appear 
+// because publishers are destroyed before the last stop commands are sent. 
+// This does not affect functionality — the robot stops safely and 
+// the node can be restarted normally.
+
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/laser_scan.hpp"
 #include "geometry_msgs/msg/twist.hpp"
@@ -176,16 +181,16 @@ private:
             if (std::fabs(error) < 0.05)  // tolerancia ~3°
             {
                 turning = false;
-                cmd.linear.x = 0.0;
+                cmd.linear.x = 0.1;
                 cmd.angular.z = 0.0;
                 RCLCPP_INFO(this->get_logger(), "Rotation completed. Resuming forward motion.");
             }
             else
             {
                 // Girar proporcional al signo del error
-                double base_turn = (error > 0.0) ? 0.5 : -0.5;
+                double base_turn = (error > 0.0) ? 8.5 : -8.5;
 
-                cmd.linear.x = 0.0;
+                cmd.linear.x = 0.1;
                 cmd.angular.z = base_turn;
 
                 RCLCPP_INFO(this->get_logger(), "Turning... current yaw: %.3f rad, target: %.3f rad",
