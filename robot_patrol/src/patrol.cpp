@@ -46,6 +46,24 @@ public:
         obstacle_detected_ = false;
         yaw_ = 0.0;
     }
+    
+    ~Patrol()
+    {
+        geometry_msgs::msg::Twist stop_cmd;
+        stop_cmd.linear.x = 0.0;
+        stop_cmd.angular.z = 0.0;
+
+        if (pub_)
+        {
+            // Publicar varias veces para asegurar que llega al robot
+            for (int i = 0; i < 5; ++i)
+            {
+                pub_->publish(stop_cmd);
+                rclcpp::sleep_for(std::chrono::milliseconds(100));
+            }
+            RCLCPP_WARN(this->get_logger(), "Shutting down — robot stopped safely.");
+        }
+    }
 
 private:
     // --------------------------- LASER CALLBACK ---------------------------
@@ -148,17 +166,14 @@ private:
             }
             else
             {
-                // Velocidad angular proporcional al signo de 'direction_'
-                double base_turn = direction_ / 2.0;
-
-                // Asegurar velocidad mínima de giro
-                if (std::fabs(base_turn) < 0.3)
-                    base_turn = (base_turn >= 0.0) ? -0.3 : 0.3;
+                // Girar proporcional al signo del error
+                double base_turn = (error > 0.0) ? 0.5 : -0.5;
 
                 cmd.linear.x = 0.0;
                 cmd.angular.z = base_turn;
-                
-                RCLCPP_INFO(this->get_logger(), "Turning... current yaw: %.3f rad", yaw_);
+
+                RCLCPP_INFO(this->get_logger(), "Turning... current yaw: %.3f rad, target: %.3f rad",
+                            yaw_, target_yaw);
             }
         }
         else
