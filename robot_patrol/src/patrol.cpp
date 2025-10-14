@@ -6,6 +6,11 @@
 #include <vector>
 #include <cmath>
 #include <mutex>
+#include <algorithm>
+
+#include <csignal>   // <-- necesario para SIGINT
+#include <memory>    // <-- para std::shared_ptr
+
 
 class Patrol : public rclcpp::Node
 {
@@ -42,28 +47,39 @@ public:
             callback_group_
         );
 
+        // Registrar función que se ejecuta al apagar ROS (Ctrl+C)
+        //rclcpp::on_shutdown([this]() {
+        //    this->stop_robot_safe();
+        //});
+
         direction_ = 0.0;
         obstacle_detected_ = false;
         yaw_ = 0.0;
     }
     
-    ~Patrol()
+    
+    // Método público para detener el robot
+    void stop_robot_safe()
     {
-        geometry_msgs::msg::Twist stop_cmd;
-        stop_cmd.linear.x = 0.0;
-        stop_cmd.angular.z = 0.0;
+        std::lock_guard<std::mutex> lock(mutex_);
 
-        if (pub_)
+        // Detener el timer del control loop para que no sobreescriba
+        if (timer_) timer_->cancel();
+
+        geometry_msgs::msg::Twist stop;
+        stop.linear.x = 0.0;
+        stop.angular.z = 0.0;
+
+        // Publicar varias veces antes de shutdown
+        for (int i = 0; i < 10; ++i)
         {
-            // Publicar varias veces para asegurar que llega al robot
-            for (int i = 0; i < 5; ++i)
-            {
-                pub_->publish(stop_cmd);
-                rclcpp::sleep_for(std::chrono::milliseconds(100));
-            }
-            RCLCPP_WARN(this->get_logger(), "Shutting down — robot stopped safely.");
+            pub_->publish(stop);
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
-    }
+
+        // Mensaje local a consola (no usar RCLCPP_WARN)
+        std::cout << "[INFO] Robot detenido (Ctrl+C detectado)" << std::endl;
+    }  
 
 private:
     // --------------------------- LASER CALLBACK ---------------------------
@@ -199,15 +215,29 @@ private:
     double yaw_;  // orientación del robot (radianes)
 };
 
+
+// ============================================================
+// =============== MANEJO DE CTRL+C ============================
+// ============================================================
+
+std::shared_ptr<Patrol> g_node;
+
+void sigint_handler(int)
+{
+    if (g_node) g_node->stop_robot_safe();  // detener robot primero
+    rclcpp::shutdown();                      // luego cerrar ROS
+}
+
 int main(int argc, char *argv[])
 {
     rclcpp::init(argc, argv);
+    g_node = std::make_shared<Patrol>();
 
-    auto node = std::make_shared<Patrol>();
+    std::signal(SIGINT, sigint_handler);
+
     rclcpp::executors::MultiThreadedExecutor exec;
-    exec.add_node(node);
+    exec.add_node(g_node);
     exec.spin();
 
-    rclcpp::shutdown();
     return 0;
 }
