@@ -11,7 +11,6 @@
 #include <vector>
 #include <cmath>
 #include <mutex>
-#include <algorithm>
 
 #include <csignal>
 #include <memory>
@@ -83,7 +82,7 @@ private:
         end_idx   = std::min((int)msg->ranges.size() - 1, end_idx);
 
         int center_idx = (start_idx + end_idx) / 2;
-        obstacle_detected_ = msg->ranges[center_idx] < 0.35;
+        obstacle_detected_ = msg->ranges[center_idx] < 0.35;//radio de cobertura
 
         if (obstacle_detected_)
         {
@@ -108,7 +107,6 @@ private:
             direction_ = 0.0;
         }
     }
-
     // --------------------------- ODOMETRY CALLBACK ---------------------------
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     {
@@ -144,10 +142,14 @@ private:
         // Iniciar giro si se detecta obstáculo y no se está girando
         if (!turning && obstacle_detected_)
         {
-            double angle_offset = (direction_ >= 0.0) ? M_PI_2 : -M_PI_2;
+            // Apuntar hacia la dirección más libre
+            double angle_offset = direction_;
             target_yaw = normalize_angle(yaw_ + angle_offset);
             turning = true;
-            RCLCPP_WARN(this->get_logger(), "Obstacle detected → turning. Target yaw: %.3f rad", target_yaw);
+
+            RCLCPP_WARN(this->get_logger(),
+                "Obstacle detected → turning toward free direction %.2f rad (target yaw: %.2f)",
+                angle_offset, target_yaw);
         }
 
         if (turning)
@@ -166,7 +168,7 @@ private:
                 // Control proporcional: giro suave mientras avanza
                 double k_p = 1.5;
                 double angular_speed = k_p * error;
-                angular_speed = std::clamp(angular_speed, -3.0, 3.0);
+                angular_speed = std::clamp(angular_speed, -4.0, 4.0);
 
                 cmd.linear.x = 0.1;
                 cmd.angular.z = angular_speed;
@@ -193,7 +195,7 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::mutex mutex_;
-    float direction_;
+    double direction_;
     bool obstacle_detected_;
     double yaw_;
 };
