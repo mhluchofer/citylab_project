@@ -75,18 +75,36 @@ private:
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
+        // Rango que vamos a analizar (−90° a +90°)
         int start_idx = (int)((-M_PI_2 - msg->angle_min) / msg->angle_increment);
         int end_idx   = (int)(( M_PI_2 - msg->angle_min) / msg->angle_increment);
-        
+
         start_idx = std::max(0, start_idx);
         end_idx   = std::min((int)msg->ranges.size() - 1, end_idx);
 
         int center_idx = (start_idx + end_idx) / 2;
-        obstacle_detected_ = msg->ranges[center_idx] < 0.35;//radio de cobertura
+
+        // ===========================================================
+        // Nueva forma de calcular la ventana frontal 
+        // ===========================================================
+        double window_angle = 10.0 * M_PI / 180.0;     // radianes
+        int window = static_cast<int>(window_angle / msg->angle_increment);
+
+        // Detección: analizar ventana frontal
+        float min_front = msg->range_max;
+        for (int i = center_idx - window; i <= center_idx + window; i++)
+        {
+            if (i >= 0 && i < (int)msg->ranges.size() && std::isfinite(msg->ranges[i]))
+            {
+                min_front = std::min(min_front, msg->ranges[i]);
+            }
+        }
+
+        obstacle_detected_ = min_front < 0.35;
+
 
         if (obstacle_detected_)
         {
-            RCLCPP_WARN_STREAM(this->get_logger(), "Obstacle detected!");
             float max_range = 0.0;
             int safest_idx = center_idx;
 
@@ -101,13 +119,15 @@ private:
             }
 
             direction_ = msg->angle_min + safest_idx * msg->angle_increment;
+            RCLCPP_WARN(this->get_logger(), "Obstacle detected! Safest direction: %.2f rad", direction_);
         }
         else
         {
             direction_ = 0.0;
         }
     }
-    // --------------------------- ODOMETRY CALLBACK ---------------------------
+
+    // ------------------------- ODOMETRY CALLBACK ---------------------------
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     {
         std::lock_guard<std::mutex> lock(mutex_);
