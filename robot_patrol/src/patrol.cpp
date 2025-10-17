@@ -11,80 +11,63 @@
 #include <vector>
 #include <cmath>
 #include <mutex>
-#include <algorithm>
 
-#include <csignal>   // <-- necesario para SIGINT
-#include <memory>    // <-- para std::shared_ptr
-
+#include <csignal>
+#include <memory>
 
 class Patrol : public rclcpp::Node
 {
 public:
     Patrol() : Node("robot_patrol")
     {
-        // Crear callback group Reentrant
         callback_group_ = this->create_callback_group(rclcpp::CallbackGroupType::Reentrant);
 
         rclcpp::SubscriptionOptions sub_options;
         sub_options.callback_group = callback_group_;
 
-        // Suscripción al LIDAR usando el callback group reentrant
         sub_scan_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
             "/scan", 10,
             std::bind(&Patrol::laser_callback, this, std::placeholders::_1),
             sub_options
         );
 
-        //Suscripción a la odometría
         sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
             "/odom", rclcpp::SensorDataQoS(),
             std::bind(&Patrol::odom_callback, this, std::placeholders::_1),
             sub_options
         );
 
-        // Publisher a /cmd_vel
         pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
 
-        // Timer 10 Hz para control_loop usando el mismo callback group
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(100),
             std::bind(&Patrol::control_loop, this),
             callback_group_
         );
 
-        // Registrar función que se ejecuta al apagar ROS (Ctrl+C)
-        //rclcpp::on_shutdown([this]() {
-        //    this->stop_robot_safe();
-        //});
-
         direction_ = 0.0;
         obstacle_detected_ = false;
         yaw_ = 0.0;
     }
-    
-    
-    // Método público para detener el robot
+
     void stop_robot_safe()
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // Detener el timer del control loop para que no sobreescriba
         if (timer_) timer_->cancel();
 
         geometry_msgs::msg::Twist stop;
         stop.linear.x = 0.0;
         stop.angular.z = 0.0;
 
-        // Publicar varias veces antes de shutdown
         for (int i = 0; i < 10; ++i)
         {
             pub_->publish(stop);
             std::this_thread::sleep_for(std::chrono::milliseconds(50));
         }
 
-        // Mensaje local a consola (no usar RCLCPP_WARN)
         std::cout << "[INFO] Robot detenido (Ctrl+C detectado)" << std::endl;
-    }  
+    }
 
 private:
     // --------------------------- LASER CALLBACK ---------------------------
@@ -99,7 +82,7 @@ private:
         end_idx   = std::min((int)msg->ranges.size() - 1, end_idx);
 
         int center_idx = (start_idx + end_idx) / 2;
-        obstacle_detected_ = msg->ranges[center_idx] < 0.35;
+        obstacle_detected_ = msg->ranges[center_idx] < 0.35;//radio de cobertura
 
         if (obstacle_detected_)
         {
@@ -124,7 +107,6 @@ private:
             direction_ = 0.0;
         }
     }
-
     // --------------------------- ODOMETRY CALLBACK ---------------------------
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     {
@@ -138,12 +120,9 @@ private:
         double siny_cosp = 2.0 * (qw * qz + qx * qy);
         double cosy_cosp = 1.0 - 2.0 * (qy * qy + qz * qz);
         yaw_ = std::atan2(siny_cosp, cosy_cosp);
-
-        //RCLCPP_INFO(this->get_logger(), "Yaw (heading): %.3f rad", yaw_);
     }
 
-    // --------------------------- CONTROL LOOP  ---------------------------
-    
+    // --------------------------- CONTROL LOOP ---------------------------
     double normalize_angle(double angle)
     {
         while (angle > M_PI) angle -= 2.0*M_PI;
@@ -157,23 +136,22 @@ private:
         geometry_msgs::msg::Twist cmd;
         cmd.linear.x = 0.1;  // Velocidad base hacia adelante
 
-        // Variables estáticas para controlar el progreso del giro
         static bool turning = false;
         static double target_yaw = 0.0;
 
         // Iniciar giro si se detecta obstáculo y no se está girando
         if (!turning && obstacle_detected_)
         {
-            // Calcular sentido del giro: derecha = -90°, izquierda = +90°
-            double angle_offset = (direction_ >= 0.0) ? M_PI_2 : -M_PI_2;
+            // Apuntar hacia la dirección más libre
+            double angle_offset = direction_;
             target_yaw = normalize_angle(yaw_ + angle_offset);
-
             turning = true;
+
             RCLCPP_WARN(this->get_logger(),
-                        "Obstacle detected → starting turn. Target yaw: %.3f rad", target_yaw);
+                "Obstacle detected → turning toward free direction %.2f rad (target yaw: %.2f)",
+                angle_offset, target_yaw);
         }
 
-        // Si está girando → controlar giro hasta alcanzar target_yaw
         if (turning)
         {
             double error = normalize_angle(target_yaw - yaw_);
@@ -183,25 +161,27 @@ private:
                 turning = false;
                 cmd.linear.x = 0.1;
                 cmd.angular.z = 0.0;
-                RCLCPP_INFO(this->get_logger(), "Rotation completed. Resuming forward motion.");
+                RCLCPP_INFO(this->get_logger(), "Rotation completed → resuming forward.");
             }
             else
             {
-                // Girar proporcional al signo del error
-                double base_turn = (error > 0.0) ? 8.5 : -8.5;
+                // Control proporcional: giro suave mientras avanza
+                double k_p = 1.5;
+                double angular_speed = k_p * error;
+                angular_speed = std::clamp(angular_speed, -4.0, 4.0);
 
                 cmd.linear.x = 0.1;
-                cmd.angular.z = base_turn;
+                cmd.angular.z = angular_speed;
 
-                RCLCPP_INFO(this->get_logger(), "Turning... current yaw: %.3f rad, target: %.3f rad",
-                            yaw_, target_yaw);
+                RCLCPP_INFO(this->get_logger(), 
+                    "Turning... yaw: %.3f, target: %.3f, ω=%.2f", yaw_, target_yaw, angular_speed);
             }
         }
         else
         {
-            // Sin obstáculo o giro completado → avanzar normalmente
+            // Movimiento libre: ligera preferencia direccional (CW o CCW)
             cmd.linear.x = 0.1;
-            cmd.angular.z = 0.0;
+            cmd.angular.z = 0;
         }
 
         pub_->publish(cmd);
@@ -215,11 +195,10 @@ private:
     rclcpp::TimerBase::SharedPtr timer_;
 
     std::mutex mutex_;
-    float direction_;
+    double direction_;
     bool obstacle_detected_;
-    double yaw_;  // orientación del robot (radianes)
+    double yaw_;
 };
-
 
 // ============================================================
 // =============== MANEJO DE CTRL+C ============================
@@ -229,8 +208,8 @@ std::shared_ptr<Patrol> g_node;
 
 void sigint_handler(int)
 {
-    if (g_node) g_node->stop_robot_safe();  // detener robot primero
-    rclcpp::shutdown();                      // luego cerrar ROS
+    if (g_node) g_node->stop_robot_safe();
+    rclcpp::shutdown();
 }
 
 int main(int argc, char *argv[])
