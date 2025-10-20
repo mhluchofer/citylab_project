@@ -15,7 +15,6 @@ class DirectionService : public rclcpp::Node
 public:
     DirectionService() : Node("direction_service")
     {
-        // Crear el servicio
         std::string service_name = "/direction_service";
         service_ = this->create_service<robot_interfaces::srv::GetDirection>(
             service_name,
@@ -34,26 +33,32 @@ private:
         std::shared_ptr<robot_interfaces::srv::GetDirection::Response> response)
     {
         auto ranges = request->laser_data.ranges;
-        size_t total_rays = ranges.size();
+        size_t n = ranges.size();
 
-        int section_size = total_rays / 3; // Aproximadamente 60º por sección
+        if (n == 0) {
+            RCLCPP_WARN(this->get_logger(), "No laser data received!");
+            response->direction = "forward";
+            return;
+        }
 
-        // Dividir el LIDAR en 3 secciones
-        auto right_section = std::vector<float>(ranges.begin(), ranges.begin() + section_size);
-        auto front_section = std::vector<float>(ranges.begin() + section_size, ranges.begin() + 2 * section_size);
-        auto left_section  = std::vector<float>(ranges.begin() + 2 * section_size, ranges.end());
+        // ============================ DIVIDE SECTIONS ===========================
+        // Right = first 60º, Front = middle 60º, Left = last 60º
+        int sec_rays = n / 3;
 
-        // Función para sumar distancias válidas (ignorar NaN o infinito)
+        auto right_section = std::vector<float>(ranges.begin(), ranges.begin() + sec_rays);
+        auto front_section = std::vector<float>(ranges.begin() + sec_rays, ranges.begin() + 2 * sec_rays);
+        auto left_section  = std::vector<float>(ranges.begin() + 2 * sec_rays, ranges.end());
+
+        // Función auxiliar para sumar valores válidos
         auto sum_valid = [](const std::vector<float>& sec) {
             double sum = 0.0;
             for (auto r : sec) if (std::isfinite(r)) sum += r;
             return sum;
         };
 
-        double total_right = sum_valid(right_section);
-        double total_front = sum_valid(front_section);
-        double total_left  = sum_valid(left_section);
-
+        double total_dist_sec_right = sum_valid(right_section);
+        double total_dist_sec_front = sum_valid(front_section);
+        double total_dist_sec_left  = sum_valid(left_section);
         // ============================ LOGIC ============================
         auto min_front = *std::min_element(front_section.begin(), front_section.end());
         if (!std::isfinite(min_front)) min_front = 0.0;
@@ -61,15 +66,18 @@ private:
         if (min_front >= 0.35) {
             response->direction = "forward";
         } else {
-            // Elegir la sección más libre (izquierda o derecha)
-            response->direction = (total_left >= total_right) ? "left" : "right";
+            if (total_dist_sec_left >= total_dist_sec_right)
+                response->direction = "left";
+            else
+                response->direction = "right";
         }
 
-        // ============================ LOGS =============================
+        // ============================ LOGS ============================
         RCLCPP_INFO(this->get_logger(),
             "Front min: %.2f → Direction: %s (Totals: F=%.2f L=%.2f R=%.2f)",
-            min_front, response->direction.c_str(), total_front, total_left, total_right);
-    }
+            min_front, response->direction.c_str(),
+            total_dist_sec_front, total_dist_sec_left, total_dist_sec_right);
+            }
 };
 
 // ============================ MAIN ===============================
