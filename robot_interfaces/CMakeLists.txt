@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(robot_patrol)
+project(robot_interfaces)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -9,27 +9,14 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(std_msgs REQUIRED)
-find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
-find_package(nav_msgs REQUIRED)
-#find_package(tf2_ros REQUIRED)
-#find_package(robot_state_publisher REQUIRED)
-#find_package(robot_model REQUIRED)
-#find_package(visualization_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
-add_executable(patrol_node src/patrol.cpp)
-ament_target_dependencies(patrol_node 
-  rclcpp
-  std_msgs
-  geometry_msgs
-  sensor_msgs
-  nav_msgs
-  #tf2_ros
-  #robot_state_publisher
-  #robot_model
-  #visualization_msgs
+# Generar servicio
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "srv/GetDirection.srv"
+  DEPENDENCIES sensor_msgs std_msgs
 )
-install(TARGETS patrol_node DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -42,9 +29,5 @@ if(BUILD_TESTING)
   set(ament_cmake_cpplint_FOUND TRUE)
   ament_lint_auto_find_test_dependencies()
 endif()
-
-install(DIRECTORY launch
-  DESTINATION share/${PROJECT_NAME}/
-)
 
 ament_package()
