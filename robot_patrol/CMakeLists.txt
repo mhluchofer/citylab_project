@@ -43,11 +43,20 @@ ament_target_dependencies(test_service
     robot_interfaces
 )
 
+add_executable(patrol_with_service src/patrol_with_service.cpp)
+ament_target_dependencies(patrol_with_service
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  robot_interfaces
+)
+
 # ========= INSTALL ==========
 install(TARGETS 
   patrol_node
   direction_service
   test_service
+  patrol_with_service
 DESTINATION lib/${PROJECT_NAME})
 
 

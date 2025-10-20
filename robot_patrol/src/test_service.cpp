@@ -33,7 +33,7 @@ private:
 
         auto future = client_->async_send_request(request,
             [this](rclcpp::Client<robot_interfaces::srv::GetDirection>::SharedFuture response) {
-                RCLCPP_INFO(this->get_logger(), "Direction: %s", response.get()->direction.c_str());
+                RCLCPP_INFO(this->get_logger(), "Got response: %s", response.get()->direction.c_str());
             }
         );
     }
