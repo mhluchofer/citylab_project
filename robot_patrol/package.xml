@@ -15,6 +15,7 @@
   <depend>sensor_msgs</depend>
   <depend>nav_msgs</depend>
   <depend>tf2_ros</depend>
+  <depend>rclcpp_action</depend>
   <depend>robot_state_publisher</depend>
   <depend>robot_model</depend>
   <depend>visualization_msgs</depend>
