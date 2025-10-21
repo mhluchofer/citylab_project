@@ -65,20 +65,19 @@ private:
         tf2::Matrix3x3 m(q);
         double roll, pitch, yaw;
         m.getRPY(roll, pitch, yaw);
-        current_pos_.theta = yaw;
+        current_pos_.theta = yaw; // Internamente en radianes
     }
 
     rclcpp_action::GoalResponse handle_goal(
         const rclcpp_action::GoalUUID &,
         std::shared_ptr<const GoToPose::Goal> goal)
     {
-        // Convertir theta de grados a radianes
-        desired_pos_ = goal->goal_pos;
-        desired_pos_.theta = goal->goal_pos.theta * M_PI / 180.0;
-        
-        RCLCPP_INFO(this->get_logger(), "Received new goal: x=%.2f, y=%.2f, theta=%.2f",
+        RCLCPP_INFO(this->get_logger(), "Received new goal: x=%.2f, y=%.2f, theta=%.2f (deg)",
                     goal->goal_pos.x, goal->goal_pos.y, goal->goal_pos.theta);
+
         desired_pos_ = goal->goal_pos;
+        // Convertir theta de grados a radianes para cálculos internos
+        desired_pos_.theta = goal->goal_pos.theta * M_PI / 180.0;
         return rclcpp_action::GoalResponse::ACCEPT_AND_EXECUTE;
     }
 
@@ -98,10 +97,11 @@ private:
     void execute(const std::shared_ptr<GoalHandleGoToPose> goal_handle)
     {
         rclcpp::Rate loop_rate(10); // 10 Hz
-        const double linear_speed = 0.2; // m/s
-        const double angular_kp = 1.0;   // Ganancia proporcional para giro
-        const double distance_tolerance = 0.05; // 5 cm
-        const double angle_tolerance = 0.05;    // 0.05 rad ~ 2.8 deg
+        const double max_linear_speed = 0.2; // m/s
+        const double max_angular_speed = 1.0; // rad/s
+        const double angular_kp = 1.5;   // Ganancia proporcional
+        const double distance_tolerance = 0.05; //  5 cm
+        const double angle_tolerance = 0.05;    // ~2.8 deg
 
         auto result = std::make_shared<GoToPose::Result>();
 
@@ -128,10 +128,17 @@ private:
             while (angle_diff < -M_PI) angle_diff += 2 * M_PI;
 
             geometry_msgs::msg::Twist cmd;
+
             if (distance > distance_tolerance)
             {
-                cmd.linear.x = linear_speed;
-                cmd.angular.z = angular_kp * angle_diff;
+                // Factor de desaceleración basado en la distancia
+                double distance_factor = std::clamp(distance / 0.2, 0.0, 1.0);
+
+                cmd.linear.x = max_linear_speed * distance_factor;
+
+                // Control proporcional angular con suavizado por distancia
+                double angular_speed = angular_kp * angle_diff * distance_factor;
+                cmd.angular.z = std::clamp(angular_speed, -max_angular_speed, max_angular_speed);
             }
             else
             {
@@ -142,7 +149,7 @@ private:
 
                 if (std::fabs(angle_error) > angle_tolerance)
                 {
-                    cmd.angular.z = angular_kp * angle_error;
+                    cmd.angular.z = std::clamp(angular_kp * angle_error, -max_angular_speed, max_angular_speed);
                     cmd.linear.x = 0.0;
                 }
                 else
@@ -160,9 +167,10 @@ private:
             // Publicar comando
             cmd_vel_pub_->publish(cmd);
 
-            // Enviar feedback
+            // Enviar feedback (theta en grados)
             auto feedback = std::make_shared<GoToPose::Feedback>();
             feedback->current_pos = current_pos_;
+            feedback->current_pos.theta = current_pos_.theta * 180.0 / M_PI;
             goal_handle->publish_feedback(feedback);
 
             loop_rate.sleep();
