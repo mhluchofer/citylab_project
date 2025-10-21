@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <rclcpp/rclcpp.hpp>
-#include "robot_interfaces/srv/get_direction.hpp" // Ajustado a tu nuevo paquete
+#include "robot_interfaces/srv/get_direction.hpp"  // Ajustado a tu nuevo paquete
 
 using std::placeholders::_1;
 using std::placeholders::_2;
@@ -13,7 +13,7 @@ using std::placeholders::_2;
 class DirectionService : public rclcpp::Node
 {
 public:
-    DirectionService() : Node("direction_service")
+    DirectionService() : Node("direction_service"), last_direction_("forward"), lock_cycles_(3)
     {
         std::string service_name = "/direction_service";
         service_ = this->create_service<robot_interfaces::srv::GetDirection>(
@@ -27,6 +27,11 @@ public:
 private:
     rclcpp::Service<robot_interfaces::srv::GetDirection>::SharedPtr service_;
 
+    // ============================ LOCK TEMPORAL ============================
+    std::string last_direction_;  // Memoriza la última dirección tomada
+    int lock_cycles_;             // Cantidad mínima de ciclos antes de permitir cambio
+    int current_lock_ = 0;        // Contador de ciclos en la misma dirección
+
     // ============================ DECISION ===========================
     void handle_service(
         const std::shared_ptr<robot_interfaces::srv::GetDirection::Request> request,
@@ -35,49 +40,93 @@ private:
         auto ranges = request->laser_data.ranges;
         size_t n = ranges.size();
 
-        if (n == 0) {
+        if (n == 0)
+        {
             RCLCPP_WARN(this->get_logger(), "No laser data received!");
             response->direction = "forward";
             return;
         }
 
         // ============================ DIVIDE SECTIONS ===========================
-        // Right = first 60º, Front = middle 60º, Left = last 60º
         int sec_rays = n / 3;
-
         auto right_section = std::vector<float>(ranges.begin(), ranges.begin() + sec_rays);
         auto front_section = std::vector<float>(ranges.begin() + sec_rays, ranges.begin() + 2 * sec_rays);
-        auto left_section  = std::vector<float>(ranges.begin() + 2 * sec_rays, ranges.end());
+        auto left_section = std::vector<float>(ranges.begin() + 2 * sec_rays, ranges.end());
 
-        // Función auxiliar para sumar valores válidos
-        auto sum_valid = [](const std::vector<float>& sec) {
+        auto sum_valid = [](const std::vector<float> &sec)
+        {
             double sum = 0.0;
-            for (auto r : sec) if (std::isfinite(r)) sum += r;
+            for (auto r : sec)
+                if (std::isfinite(r))
+                    sum += r;
             return sum;
         };
 
         double total_dist_sec_right = sum_valid(right_section);
         double total_dist_sec_front = sum_valid(front_section);
-        double total_dist_sec_left  = sum_valid(left_section);
-        // ============================ LOGIC ============================
-        auto min_front = *std::min_element(front_section.begin(), front_section.end());
-        if (!std::isfinite(min_front)) min_front = 0.0;
+        double total_dist_sec_left = sum_valid(left_section);
 
-        if (min_front >= 0.35) {
-            response->direction = "forward";
-        } else {
+        auto min_front = *std::min_element(front_section.begin(), front_section.end());
+        if (!std::isfinite(min_front))
+            min_front = 0.0;
+
+        // ============================ PORCENTAJE LIBRE FRONTAL ============================
+        int free_count = 0;
+        for (auto r : front_section)
+            if (std::isfinite(r) && r >= 0.35)  // mismo umbral frontal
+                free_count++;
+
+        double free_percentage = static_cast<double>(free_count) / front_section.size();
+
+        // ============================ LÓGICA CON LOCK TEMPORAL Y % LIBRE ============================
+        std::string new_direction;
+
+        // Si hay suficiente espacio libre adelante, seguimos "forward" aunque min_front esté bajo
+        if (free_percentage >= 0.7)  // por ejemplo, 60% de frontal libre
+        {
+            new_direction = "forward";
+        }
+        else
+        {
             if (total_dist_sec_left >= total_dist_sec_right)
-                response->direction = "left";
+                new_direction = "left";
             else
-                response->direction = "right";
+                new_direction = "right";
+        }
+
+        // Aplicar lock temporal
+        if (new_direction != last_direction_)
+        {
+            if (current_lock_ < lock_cycles_)
+            {
+                response->direction = last_direction_;
+                current_lock_++;
+                RCLCPP_WARN(this->get_logger(), "Direction locked: keeping '%s' to avoid oscillation", last_direction_.c_str());
+            }
+            else
+            {
+                response->direction = new_direction;
+                last_direction_ = new_direction;
+                current_lock_ = 0;
+            }
+        }
+        else
+        {
+            response->direction = new_direction;
+            current_lock_ = 0;
         }
 
         // ============================ LOGS ============================
-        RCLCPP_INFO(this->get_logger(),
-            "Front min: %.2f → Direction: %s (Totals: F=%.2f L=%.2f R=%.2f)",
-            min_front, response->direction.c_str(),
-            total_dist_sec_front, total_dist_sec_left, total_dist_sec_right);
-            }
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Front min: %.2f, Free%%: %.2f → Direction: %s (Totals: F=%.2f L=%.2f R=%.2f)",
+            min_front,
+            free_percentage,
+            response->direction.c_str(),
+            total_dist_sec_front,
+            total_dist_sec_left,
+            total_dist_sec_right);
+    }
 };
 
 // ============================ MAIN ===============================
