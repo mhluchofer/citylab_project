@@ -29,7 +29,9 @@ ament_target_dependencies(patrol_node
   #robot_model
   #visualization_msgs
 )
-install(TARGETS patrol_node DESTINATION lib/${PROJECT_NAME})
+install(TARGETS 
+patrol_node 
+DESTINATION lib/${PROJECT_NAME})
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -43,7 +45,7 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-install(DIRECTORY launch
+install(DIRECTORY launch rviz
   DESTINATION share/${PROJECT_NAME}/
 )
 
