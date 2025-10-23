@@ -4,6 +4,15 @@ Panels:
     Name: Displays
     Property Tree Widget:
       Expanded:
+        - /Global Options1
+        - /Status1
+        - /Grid1
+        - /Axes1
+        - /RobotModel1
+        - /TF1
+        - /LaserScan1
+        - /LaserScan1/Status1
+        - /Odometry1
         - /Odometry1/Shape1
         - /Odometry1/Covariance1
       Splitter Ratio: 0.5
@@ -47,6 +56,13 @@ Visualization Manager:
       Plane Cell Count: 50
       Reference Frame: <Fixed Frame>
       Value: true
+    - Class: rviz_default_plugins/Axes
+      Enabled: true
+      Length: 2.5
+      Name: Axes
+      Radius: 0.009999999776482582
+      Reference Frame: <Fixed Frame>
+      Value: true
     - Alpha: 1
       Class: rviz_default_plugins/RobotModel
       Collision Enabled: false
@@ -57,7 +73,7 @@ Visualization Manager:
         Durability Policy: Volatile
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /turtlebot3_0_robot_description
+        Value: /fastbot_1_robot_description
       Enabled: true
       Links:
         All Links Enabled: true
@@ -65,35 +81,26 @@ Visualization Manager:
         Expand Link Details: false
         Expand Tree: false
         Link Tree Style: Links in Alphabetic Order
-        base_footprint:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        base_link:
+        fastbot_1_base_link:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        base_scan:
+        fastbot_1_camera:
+          Alpha: 1
+          Show Axes: false
+          Show Trail: false
+        fastbot_1_lidar:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        caster_back_link:
+        fastbot_1_wheel_left:
           Alpha: 1
           Show Axes: false
           Show Trail: false
           Value: true
-        imu_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-        wheel_left_link:
-          Alpha: 1
-          Show Axes: false
-          Show Trail: false
-          Value: true
-        wheel_right_link:
+        fastbot_1_wheel_right:
           Alpha: 1
           Show Axes: false
           Show Trail: false
@@ -106,33 +113,22 @@ Visualization Manager:
       Update Interval: 0
       Value: true
       Visual Enabled: true
-    - Class: rviz_default_plugins/Axes
-      Enabled: true
-      Length: 2.5
-      Name: Axes
-      Radius: 0.009999999776482582
-      Reference Frame: <Fixed Frame>
-      Value: true
     - Class: rviz_default_plugins/TF
       Enabled: true
       Frame Timeout: 15
       Frames:
         All Enabled: true
-        base_footprint:
+        fastbot_1_base_link:
           Value: true
-        base_link:
+        fastbot_1_camera:
           Value: true
-        base_scan:
+        fastbot_1_lidar:
           Value: true
-        caster_back_link:
+        fastbot_1_odom:
           Value: true
-        imu_link:
+        fastbot_1_wheel_left:
           Value: true
-        odom:
-          Value: true
-        wheel_left_link:
-          Value: true
-        wheel_right_link:
+        fastbot_1_wheel_right:
           Value: true
       Marker Scale: 0.5
       Name: TF
@@ -140,19 +136,16 @@ Visualization Manager:
       Show Axes: true
       Show Names: true
       Tree:
-        odom:
-          base_footprint:
-            base_link:
-              base_scan:
-                {}
-              caster_back_link:
-                {}
-              imu_link:
-                {}
-              wheel_left_link:
-                {}
-              wheel_right_link:
-                {}
+        fastbot_1_odom:
+          fastbot_1_base_link:
+            fastbot_1_camera:
+              {}
+            fastbot_1_lidar:
+              {}
+            fastbot_1_wheel_left:
+              {}
+            fastbot_1_wheel_right:
+              {}
       Update Interval: 0
       Value: true
     - Alpha: 1
@@ -185,7 +178,7 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /scan
+        Value: /fastbot_1/scan
       Use Fixed Frame: true
       Use rainbow: true
       Value: true
@@ -214,7 +207,7 @@ Visualization Manager:
         Alpha: 1
         Axes Length: 1
         Axes Radius: 0.10000000149011612
-        Color: 255; 255; 0
+        Color: 255; 25; 0
         Head Length: 0.10000000149011612
         Head Radius: 0.05000000074505806
         Shaft Length: 0.25
@@ -226,12 +219,12 @@ Visualization Manager:
         Filter size: 10
         History Policy: Keep Last
         Reliability Policy: Reliable
-        Value: /odom
+        Value: /fastbot_1/odom
       Value: true
   Enabled: true
   Global Options:
     Background Color: 48; 48; 48
-    Fixed Frame: odom
+    Fixed Frame: fastbot_1_odom
     Frame Rate: 30
   Name: root
   Tools:
