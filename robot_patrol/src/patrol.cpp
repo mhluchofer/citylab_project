@@ -75,43 +75,59 @@ private:
     {
         std::lock_guard<std::mutex> lock(mutex_);
 
-        // Rango que vamos a analizar (−90° a +90°)
+        int total_rays = msg->ranges.size();
+        if (total_rays == 0) return;
+
+        // Limitar el análisis entre -90° y +90° (semicírculo frontal)
         int start_idx = (int)((-M_PI_2 - msg->angle_min) / msg->angle_increment);
         int end_idx   = (int)(( M_PI_2 - msg->angle_min) / msg->angle_increment);
-
         start_idx = std::max(0, start_idx);
-        end_idx   = std::min((int)msg->ranges.size() - 1, end_idx);
+        end_idx   = std::min(total_rays - 1, end_idx);
 
         int center_idx = (start_idx + end_idx) / 2;
 
-        // ===========================================================
-        // Nueva forma de calcular la ventana frontal 
-        // ===========================================================
-        double window_angle = 10.0 * M_PI / 180.0;     // radianes
-        int window = static_cast<int>(window_angle / msg->angle_increment);
+        // --- Zona frontal (±30°) ---
+        double frontal_angle = 30.0 * M_PI / 180.0;
+        int frontal_window = static_cast<int>(frontal_angle / msg->angle_increment);
 
-        // Detección: analizar ventana frontal
+        std::vector<float> front_section(
+            msg->ranges.begin() + std::max(center_idx - frontal_window, 0),
+            msg->ranges.begin() + std::min(center_idx + frontal_window, total_rays - 1)
+        );
+
+        // Calcular porcentaje libre frontal
+        int free_count = 0;
+        int valid_count = 0;
         float min_front = msg->range_max;
-        for (int i = center_idx - window; i <= center_idx + window; i++)
+
+        for (auto r : front_section)
         {
-            if (i >= 0 && i < (int)msg->ranges.size() && std::isfinite(msg->ranges[i]))
+            if (std::isfinite(r))
             {
-                min_front = std::min(min_front, msg->ranges[i]);
+                valid_count++;
+                if (r >= 0.35) free_count++;
+                if (r < min_front) min_front = r;
             }
         }
 
-        obstacle_detected_ = min_front < 0.35;
+        double free_percentage = (valid_count > 0)
+                                ? static_cast<double>(free_count) / valid_count
+                                : 1.0; // asumimos libre si no hay datos
 
+        // --- Activar obstáculo solo si la zona frontal está bloqueada ---
+        obstacle_detected_ = (free_percentage < 0.7); // solo si más del 30% está ocupado
 
+        // --- Encontrar la dirección más libre ---
         if (obstacle_detected_)
         {
+            // Buscar ángulo con mayor distancia dentro de -90° a +90°
             float max_range = 0.0;
             int safest_idx = center_idx;
 
             for (int i = start_idx; i <= end_idx; i++)
             {
                 float r = msg->ranges[i];
-                if (std::isfinite(r) && r > max_range && r < msg->range_max)
+                if (std::isfinite(r) && r > max_range)
                 {
                     max_range = r;
                     safest_idx = i;
@@ -119,13 +135,18 @@ private:
             }
 
             direction_ = msg->angle_min + safest_idx * msg->angle_increment;
-            RCLCPP_WARN(this->get_logger(), "Obstacle detected! Safest direction: %.2f rad", direction_);
+            RCLCPP_WARN(this->get_logger(),
+                "Obstacle ahead! Free%%=%.2f → turning toward %.2f rad", free_percentage, direction_);
         }
         else
         {
             direction_ = 0.0;
+            RCLCPP_INFO(this->get_logger(),
+                "Front clear (Free%%=%.2f, min_front=%.2f) → moving forward", free_percentage, min_front);
         }
     }
+
+
     // --------------------------- ODOMETRY CALLBACK ---------------------------
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     {
@@ -158,17 +179,20 @@ private:
         static bool turning = false;
         static double target_yaw = 0.0;
 
+
+        // Ángulo mínimo de giro
+        double min_turn = 45.0 * M_PI / 180.0;
         // Iniciar giro si se detecta obstáculo y no se está girando
         if (!turning && obstacle_detected_)
         {
             // Apuntar hacia la dirección más libre
-            double angle_offset = direction_;
+            double angle_offset = (direction_ < 0) ? -min_turn : min_turn;
             target_yaw = normalize_angle(yaw_ + angle_offset);
             turning = true;
 
             RCLCPP_WARN(this->get_logger(),
-                "Obstacle detected → turning toward free direction %.2f rad (target yaw: %.2f)",
-                angle_offset, target_yaw);
+                "Obstacle detected → turning toward free direction %.2f rad (target yaw: %.2f), (yaw: %.2f)",
+                angle_offset, target_yaw, yaw_);
         }
 
         if (turning)
@@ -206,6 +230,7 @@ private:
         pub_->publish(cmd);
     }
 
+
     // --------------------------- VARIABLES ---------------------------
     rclcpp::CallbackGroup::SharedPtr callback_group_;
     rclcpp::Publisher<geometry_msgs::msg::Twist>::SharedPtr pub_;
@@ -217,6 +242,7 @@ private:
     double direction_;
     bool obstacle_detected_;
     double yaw_;
+
 };
 
 // ============================================================
