@@ -26,18 +26,18 @@ public:
         sub_options.callback_group = callback_group_;
 
         sub_scan_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", 10,
+            "/fastbot_1/scan", 10,
             std::bind(&Patrol::laser_callback, this, std::placeholders::_1),
             sub_options
         );
 
         sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/odom", rclcpp::SensorDataQoS(),
+            "/fastbot_1/odom", rclcpp::SensorDataQoS(),
             std::bind(&Patrol::odom_callback, this, std::placeholders::_1),
             sub_options
         );
 
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
 
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(100),
