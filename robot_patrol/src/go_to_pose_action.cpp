@@ -24,11 +24,11 @@ public:
     GoToPoseAction() : Node("go_to_pose_action")
     {
         // Publisher para mover el robot
-        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/cmd_vel", 10);
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
 
         // Suscripción a odometría
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/odom", 10,
+            "/fastbot_1/odom", 10,
             std::bind(&GoToPoseAction::odom_callback, this, std::placeholders::_1));
 
         // Servidor de acción

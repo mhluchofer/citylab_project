@@ -16,7 +16,7 @@ public:
 
         // Subscribir al tópico de láser
         laser_sub_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/scan", 10, std::bind(&ServiceTester::laser_callback, this, _1)
+            "/fastbot_1/scan", 10, std::bind(&ServiceTester::laser_callback, this, _1)
         );
     }
 
