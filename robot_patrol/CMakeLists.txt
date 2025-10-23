@@ -8,15 +8,19 @@ endif()
 # find dependencies
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
+find_package(rclcpp_action REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(geometry_msgs REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
-#find_package(tf2_ros REQUIRED)
-#find_package(robot_state_publisher REQUIRED)
+find_package(robot_interfaces REQUIRED)
+find_package(tf2_ros REQUIRED)
+find_package(tf2_geometry_msgs REQUIRED)
 #find_package(robot_model REQUIRED)
 #find_package(visualization_msgs REQUIRED)
 
+# ========= EXECUTABLES ==========
 add_executable(patrol_node src/patrol.cpp)
 ament_target_dependencies(patrol_node 
   rclcpp
@@ -24,14 +28,54 @@ ament_target_dependencies(patrol_node
   geometry_msgs
   sensor_msgs
   nav_msgs
-  #tf2_ros
-  #robot_state_publisher
-  #robot_model
-  #visualization_msgs
 )
+
+add_executable(direction_service src/direction_service.cpp)
+ament_target_dependencies(direction_service 
+	rclcpp 
+	sensor_msgs
+	robot_interfaces
+)
+
+add_executable(test_service src/test_service.cpp)
+ament_target_dependencies(test_service 
+    rclcpp 
+    sensor_msgs
+    robot_interfaces
+)
+
+add_executable(patrol_with_service src/patrol_with_service.cpp)
+ament_target_dependencies(patrol_with_service
+  rclcpp
+  sensor_msgs
+  geometry_msgs
+  robot_interfaces
+)
+
+add_executable(go_to_pose_action src/go_to_pose_action.cpp)
+ament_target_dependencies(go_to_pose_action
+  rclcpp
+  rclcpp_action
+  geometry_msgs
+  nav_msgs
+  tf2
+  tf2_geometry_msgs
+  robot_interfaces
+)
+
+# ========= INSTALL ==========
 install(TARGETS 
-patrol_node 
+  patrol_node
+  direction_service
+  test_service
+  patrol_with_service
+  go_to_pose_action
 DESTINATION lib/${PROJECT_NAME})
+
+
+install(DIRECTORY launch rviz
+  DESTINATION share/${PROJECT_NAME}/
+)
 
 if(BUILD_TESTING)
   find_package(ament_lint_auto REQUIRED)
@@ -45,8 +89,6 @@ if(BUILD_TESTING)
   ament_lint_auto_find_test_dependencies()
 endif()
 
-install(DIRECTORY launch rviz
-  DESTINATION share/${PROJECT_NAME}/
-)
+
 
 ament_package()
