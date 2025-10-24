@@ -116,7 +116,7 @@ private:
                                 : 1.0; // asumimos libre si no hay datos
 
         // --- Activar obstáculo solo si la zona frontal está bloqueada ---
-        obstacle_detected_ = (free_percentage < 0.8); // solo si más del 30% está ocupado
+        obstacle_detected_ = (free_percentage < 0.7); // solo si más del 30% está ocupado
 
         // --- Encontrar la dirección más libre ---
         if (obstacle_detected_)
@@ -175,7 +175,7 @@ private:
     {
         std::lock_guard<std::mutex> lock(mutex_);
         geometry_msgs::msg::Twist cmd;
-        cmd.linear.x = 0.1;  // Velocidad base hacia adelante
+        cmd.linear.x = linear_speed;  // Velocidad base hacia adelante
 
         static bool turning = false;
         static double target_yaw = 0.0;
@@ -203,7 +203,7 @@ private:
             if (std::fabs(error) < 0.05)  // tolerancia ~3°
             {
                 turning = false;
-                cmd.linear.x = 0.1;
+                cmd.linear.x = linear_speed;
                 cmd.angular.z = 0.0;
                 RCLCPP_INFO(this->get_logger(), "Rotation completed → resuming forward.");
             }
@@ -212,9 +212,9 @@ private:
                 // Control proporcional: giro suave mientras avanza
                 double k_p = 1.5;
                 double angular_speed = k_p * error;
-                angular_speed = std::clamp(angular_speed, -2.0, 2.0);
+                angular_speed = std::clamp(angular_speed, -0.5, 0.5);
 
-                cmd.linear.x = 0.1;
+                cmd.linear.x = linear_speed;
                 cmd.angular.z = angular_speed;
 
                 RCLCPP_INFO(this->get_logger(), 
@@ -224,7 +224,7 @@ private:
         else
         {
             // Movimiento libre: ligera preferencia direccional (CW o CCW)
-            cmd.linear.x = 0.1;
+            cmd.linear.x = linear_speed;
             cmd.angular.z = 0;
         }
 
@@ -242,14 +242,8 @@ private:
     std::mutex mutex_;
     double direction_;
     bool obstacle_detected_;
+    double linear_speed=0.25;
     double yaw_;
-
-
-    // Variables miembro sugeridas:
-    double accumulated_target_yaw_ = 0.0;
-    double target_yaw_ = 0.0;
-    bool turning_ = false;
-    int turn_direction_ = 0; // -1 = CCW, +1 = CW
 
 };
 
