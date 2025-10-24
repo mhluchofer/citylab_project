@@ -26,19 +26,19 @@ public:
         sub_options.callback_group = callback_group_;
 
         sub_scan_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/fastbot_1/scan", 10,
+            "scan", 10,
             std::bind(&Patrol::laser_callback, this, std::placeholders::_1),
             sub_options
         );
 
         sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/fastbot_1/odom", rclcpp::SensorDataQoS(),
+            "odom", rclcpp::SensorDataQoS(),
             std::bind(&Patrol::odom_callback, this, std::placeholders::_1),
             sub_options
         );
 
 
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(100),
@@ -116,7 +116,7 @@ private:
                                 : 1.0; // asumimos libre si no hay datos
 
         // --- Activar obstáculo solo si la zona frontal está bloqueada ---
-        obstacle_detected_ = (free_percentage < 0.7); // solo si más del 30% está ocupado
+        obstacle_detected_ = (free_percentage < 0.8); // solo si más del 30% está ocupado
 
         // --- Encontrar la dirección más libre ---
         if (obstacle_detected_)
@@ -212,7 +212,7 @@ private:
                 // Control proporcional: giro suave mientras avanza
                 double k_p = 1.5;
                 double angular_speed = k_p * error;
-                angular_speed = std::clamp(angular_speed, -4.0, 4.0);
+                angular_speed = std::clamp(angular_speed, -2.0, 2.0);
 
                 cmd.linear.x = 0.1;
                 cmd.angular.z = angular_speed;
