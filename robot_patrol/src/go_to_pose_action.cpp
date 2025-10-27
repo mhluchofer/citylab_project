@@ -24,11 +24,11 @@ public:
     GoToPoseAction() : Node("go_to_pose_action")
     {
         // Publisher para mover el robot
-        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+        cmd_vel_pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
         // Suscripción a odometría
         odom_sub_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/fastbot_1/odom", 10,
+            "odom", 10,
             std::bind(&GoToPoseAction::odom_callback, this, std::placeholders::_1));
 
         // Servidor de acción
@@ -97,9 +97,9 @@ private:
     void execute(const std::shared_ptr<GoalHandleGoToPose> goal_handle)
     {
         rclcpp::Rate loop_rate(10); // 10 Hz
-        const double max_linear_speed = 0.2; // m/s
+        const double max_linear_speed = 0.1; // m/s
         const double max_angular_speed = 1.0; // rad/s
-        const double angular_kp = 1.5;   // Ganancia proporcional
+        const double angular_kp = 1.65;   // Ganancia proporcional
         const double distance_tolerance = 0.05; //  5 cm
         const double angle_tolerance = 0.05;    // ~2.8 deg
 

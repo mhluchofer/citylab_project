@@ -23,13 +23,13 @@ public:
 
         // Subscribe to LaserScan
         sub_scan_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/fastbot_1/scan", 10,
+            "scan", 10,
             std::bind(&PatrolWithService::laser_callback, this, std::placeholders::_1),
             sub_options
         );
 
         // Publisher for cmd_vel
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
         // Service client
         client_ = this->create_client<robot_interfaces::srv::GetDirection>("/direction_service");
