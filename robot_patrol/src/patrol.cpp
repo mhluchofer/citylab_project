@@ -26,19 +26,19 @@ public:
         sub_options.callback_group = callback_group_;
 
         sub_scan_ = this->create_subscription<sensor_msgs::msg::LaserScan>(
-            "/fastbot_1/scan", 10,
+            "scan", 10,
             std::bind(&Patrol::laser_callback, this, std::placeholders::_1),
             sub_options
         );
 
         sub_odom_ = this->create_subscription<nav_msgs::msg::Odometry>(
-            "/fastbot_1/odom", rclcpp::SensorDataQoS(),
+            "odom", rclcpp::SensorDataQoS(),
             std::bind(&Patrol::odom_callback, this, std::placeholders::_1),
             sub_options
         );
 
 
-        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("/fastbot_1/cmd_vel", 10);
+        pub_ = this->create_publisher<geometry_msgs::msg::Twist>("cmd_vel", 10);
 
         timer_ = this->create_wall_timer(
             std::chrono::milliseconds(100),
@@ -79,13 +79,11 @@ private:
         int total_rays = msg->ranges.size();
         if (total_rays == 0) return;
 
-        // Limitar el análisis entre -90° y +90° (semicírculo frontal)
-        int start_idx = (int)((-M_PI_2 - msg->angle_min) / msg->angle_increment);
-        int end_idx   = (int)(( M_PI_2 - msg->angle_min) / msg->angle_increment);
-        start_idx = std::max(0, start_idx);
-        end_idx   = std::min(total_rays - 1, end_idx);
-
-        int center_idx = (start_idx + end_idx) / 2;
+        // ============================ CENTRO DEL FRENTE ============================
+        // Ajustar indices para que el frente apunte a 0 rad
+        int center_idx = static_cast<int>((0.0 - msg->angle_min) / msg->angle_increment);
+        int start_idx  = std::max(0, center_idx - total_rays / 4); // -90°
+        int end_idx    = std::min(total_rays - 1, center_idx + total_rays / 4); // +90°
 
         // --- Zona frontal (±30°) ---
         double frontal_angle = 30.0 * M_PI / 180.0;
@@ -96,7 +94,7 @@ private:
             msg->ranges.begin() + std::min(center_idx + frontal_window, total_rays - 1)
         );
 
-        // Calcular porcentaje libre frontal
+        // ============================ CALCULAR % LIBRE Y MIN ============================
         int free_count = 0;
         int valid_count = 0;
         float min_front = msg->range_max;
@@ -115,10 +113,10 @@ private:
                                 ? static_cast<double>(free_count) / valid_count
                                 : 1.0; // asumimos libre si no hay datos
 
-        // --- Activar obstáculo solo si la zona frontal está bloqueada ---
-        obstacle_detected_ = (free_percentage < 0.7); // solo si más del 30% está ocupado
+        // ============================ DETECCIÓN DE OBSTÁCULOS ============================
+        obstacle_detected_ = (free_percentage < 0.8); // solo si más del 30% está ocupado
 
-        // --- Encontrar la dirección más libre ---
+        // ============================ ELECCIÓN DE DIRECCIÓN ============================
         if (obstacle_detected_)
         {
             // Buscar ángulo con mayor distancia dentro de -90° a +90°
@@ -147,7 +145,6 @@ private:
         }
     }
 
-
     // --------------------------- ODOMETRY CALLBACK ---------------------------
     void odom_callback(const nav_msgs::msg::Odometry::SharedPtr msg)
     {
@@ -175,14 +172,14 @@ private:
     {
         std::lock_guard<std::mutex> lock(mutex_);
         geometry_msgs::msg::Twist cmd;
-        cmd.linear.x = 0.1;  // Velocidad base hacia adelante
+        cmd.linear.x = linear_speed;  // Velocidad base hacia adelante
 
         static bool turning = false;
         static double target_yaw = 0.0;
 
 
         // Ángulo mínimo de giro
-        double min_turn = 45.0 * M_PI / 180.0;
+        double min_turn = 30.0 * M_PI / 180.0;
         // Iniciar giro si se detecta obstáculo y no se está girando
         if (!turning && obstacle_detected_)
         {
@@ -203,18 +200,20 @@ private:
             if (std::fabs(error) < 0.05)  // tolerancia ~3°
             {
                 turning = false;
-                cmd.linear.x = 0.1;
+                cmd.linear.x = linear_speed;
                 cmd.angular.z = 0.0;
                 RCLCPP_INFO(this->get_logger(), "Rotation completed → resuming forward.");
+                RCLCPP_INFO(this->get_logger(), 
+                    "forward: %.3f", cmd.linear.x);
             }
             else
             {
                 // Control proporcional: giro suave mientras avanza
                 double k_p = 1.5;
                 double angular_speed = k_p * error;
-                angular_speed = std::clamp(angular_speed, -4.0, 4.0);
+                angular_speed = std::clamp(angular_speed, -1.5, 1.5);
 
-                cmd.linear.x = 0.1;
+                cmd.linear.x = linear_speed;
                 cmd.angular.z = angular_speed;
 
                 RCLCPP_INFO(this->get_logger(), 
@@ -224,8 +223,9 @@ private:
         else
         {
             // Movimiento libre: ligera preferencia direccional (CW o CCW)
-            cmd.linear.x = 0.1;
+            cmd.linear.x = linear_speed;
             cmd.angular.z = 0;
+            RCLCPP_INFO(this->get_logger(), "forward: %.3f", cmd.linear.x);
         }
 
         pub_->publish(cmd);
@@ -242,14 +242,8 @@ private:
     std::mutex mutex_;
     double direction_;
     bool obstacle_detected_;
+    double linear_speed=0.1;
     double yaw_;
-
-
-    // Variables miembro sugeridas:
-    double accumulated_target_yaw_ = 0.0;
-    double target_yaw_ = 0.0;
-    bool turning_ = false;
-    int turn_direction_ = 0; // -1 = CCW, +1 = CW
 
 };
 
